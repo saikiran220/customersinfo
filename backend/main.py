@@ -12,15 +12,26 @@ load_dotenv(dotenv_path=env_path)
 
 app = FastAPI(title="User Data Entry API")
 
-# CORS - Allow React frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+# CORS - configurable via CORS_ORIGINS env (e.g. "*" for dev or "https://myapp.com" for production)
+# For production, use a specific frontend URL, not "*"
+_cors_origins = os.getenv("CORS_ORIGINS", "").strip()
+if _cors_origins == "*":
+    _origins = ["*"]
+elif _cors_origins:
+    _origins = [o.strip() for o in _cors_origins.split(",") if o.strip()]
+else:
+    _origins = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-    ],
+        "http://localhost:32769",
+        "http://127.0.0.1:32769",
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
