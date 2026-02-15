@@ -13,29 +13,34 @@ load_dotenv(dotenv_path=env_path)
 app = FastAPI(title="User Data Entry API")
 
 # CORS - configurable via CORS_ORIGINS env (e.g. "*" for dev or "https://myapp.com" for production)
-# For production, use a specific frontend URL, not "*"
+# When unset: allow any localhost port (for Vite dev server). For production, set CORS_ORIGINS to your frontend URL.
 _cors_origins = os.getenv("CORS_ORIGINS", "").strip()
 if _cors_origins == "*":
-    _origins = ["*"]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 elif _cors_origins:
     _origins = [o.strip() for o in _cors_origins.split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 else:
-    _origins = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:32769",
-        "http://127.0.0.1:32769",
-    ]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    # Allow any localhost / 127.0.0.1 port (covers Vite dev ports like 5173, 32770, etc.)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 class UserCreate(BaseModel):
