@@ -146,7 +146,7 @@ export default App
 // │   └── .env.example
 // ├── backend/            # FastAPI
 // │   ├── main.py        # POST /users, Supabase, CORS
-// │   ├── requirements.txt
+// │   ├── requirments.txt
 // │   └── .env.example
 // ├── .env.example
 // ├── .gitignore
