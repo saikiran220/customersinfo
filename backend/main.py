@@ -3,8 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
 import os
+import json
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 # Load .env from backend directory
 env_path = Path(__file__).resolve().parent / ".env"
@@ -65,6 +70,65 @@ def root():
     return {"message": "User Data Entry API is running"}
 
 
+@app.get("/health")
+def health():
+    """Check Supabase connectivity and table access. Helps debug 500s."""
+    try:
+        supabase = get_supabase()
+        # Simple query to verify table exists and we have permission
+        r = supabase.table("users").select("id").limit(1).execute()
+        return {"status": "ok", "database": "reachable", "table": "users"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("Health check failed: %s", e)
+        return {
+            "status": "error",
+            "database": "unreachable or misconfigured",
+            "hint": _friendly_error_message(e),
+        }
+
+
+def _friendly_error_message(e: Exception) -> str:
+    """Turn backend/Supabase errors into user-friendly messages."""
+    raw = str(e)
+    # PostgREST/Supabase APIError has .message and .details
+    if hasattr(e, "message") and getattr(e, "message", None):
+        raw = str(e.message) or raw
+    if hasattr(e, "details") and getattr(e, "details", None):
+        raw = str(e.details) if not raw else raw
+
+    msg = raw.lower() if raw else ""
+
+    # Try to parse Supabase/PostgREST JSON error (e.g. '{"message":"...","code":"..."}')
+    if raw and raw.strip().startswith("{"):
+        try:
+            obj = json.loads(raw)
+            if isinstance(obj, dict) and obj.get("message"):
+                raw = obj["message"]
+                msg = raw.lower()
+        except Exception:
+            pass
+
+    if "relation" in msg and "does not exist" in msg:
+        return (
+            "Database table 'users' does not exist. "
+            "Run the SQL in backend/supabase_schema.sql in your Supabase project (SQL Editor)."
+        )
+    if "permission denied" in msg or "policy" in msg or "row level security" in msg or "rls" in msg:
+        return (
+            "Database permission denied. "
+            "Ensure the 'users' table has RLS policies allowing insert (see backend/supabase_schema.sql)."
+        )
+    if "invalid" in msg and "key" in msg:
+        return "Invalid Supabase API key. Check SUPABASE_ANON_KEY in backend/.env"
+    if "connection" in msg or "timeout" in msg or "10060" in msg:
+        return "Cannot reach the database. Check your internet, firewall, or VPN and try again."
+    if "jwt" in msg or "expired" in msg or "unauthorized" in msg or "invalid api key" in msg:
+        return "Invalid or expired Supabase API key. Check SUPABASE_ANON_KEY in backend/.env (Supabase → Settings → API)."
+    return raw if raw else "An unexpected error occurred. Check backend logs."
+
+
 @app.post("/users")
 def create_user(user: UserCreate):
     try:
@@ -76,5 +140,14 @@ def create_user(user: UserCreate):
         }
         result = supabase.table("users").insert(data).execute()
         return {"message": "User created successfully", "data": result.data}
+    except (OSError, ConnectionError, TimeoutError):
+        raise HTTPException(
+            status_code=503,
+            detail="Cannot reach the database. Check your internet, firewall, or VPN and try again.",
+        )
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("POST /users failed: %s", e)
+        detail = _friendly_error_message(e)
+        raise HTTPException(status_code=500, detail=detail)

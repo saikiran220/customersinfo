@@ -58,7 +58,19 @@ function App() {
       setFormData({ name: '', father_name: '', mobile_no: '' })
       setErrors({})
     } catch (err) {
-      setErrors({ submit: err.response?.data?.detail || 'Failed to save. Please try again.' })
+      let message = 'Failed to save. Please try again.'
+      if (err.response?.data?.detail) {
+        message = typeof err.response.data.detail === 'string'
+          ? err.response.data.detail
+          : Array.isArray(err.response.data.detail)
+            ? err.response.data.detail.map(d => d.msg || JSON.stringify(d)).join(', ')
+            : JSON.stringify(err.response.data.detail)
+      } else if (err.code === 'ERR_NETWORK' || err.message?.includes('Network')) {
+        message = 'Cannot reach the server. Is the backend running at ' + API_URL + '?'
+      } else if (err.message) {
+        message = err.message
+      }
+      setErrors({ submit: message })
     } finally {
       setLoading(false)
     }
